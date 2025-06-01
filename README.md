@@ -43,20 +43,6 @@ Proyek ini adalah aplikasi web Flask sederhana yang berfungsi sebagai mesin penc
 * **Beautiful Soup 4**: Library untuk parsing HTML dan mengekstrak konten teks.
 * **Requests**: Library untuk membuat HTTP request saat crawling.
 
-## Struktur Proyek
-├── app.py               # Logika utama aplikasi Flask, crawler, search
-├── config.py            # Konfigurasi aplikasi (SEED_URL, batasan crawl, dll.)
-├── database.py          # Skema dan inisialisasi database SQLite
-├── templates/
-│   ├── index.html       # Halaman utama pencarian
-│   ├── results.html     # Halaman hasil pencarian
-│   ├── crawl_admin.html # Halaman administrasi crawler
-│   └── path_display_modal_content.html # Konten modal untuk menampilkan rute link
-├── static/
-│   └── style.css        # (File CSS untuk styling - perlu dibuat pengguna)
-├── search_engine.db     # File database SQLite (dibuat saat aplikasi dijalankan pertama kali)
-└── README.md            # File ini
-
 ## Instalasi dan Setup
 
 1.  **Clone atau Unduh Proyek**:
