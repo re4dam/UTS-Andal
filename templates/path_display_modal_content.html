@@ -1,0 +1,21 @@
+<p>Rute dari <strong>{{ seed_url }}</strong> ke <strong>{{ target_url }}</strong>:</p>
+{% if path %}
+<ol class="path-list">
+    {% for step in path %}
+    <li>
+        {% if loop.first %}
+        <strong>Halaman Awal (Seed):</strong> <a href="{{ step.url }}" target="_blank">{{ step.url }}</a>
+        {% else %}
+        &raquo; Melalui link <strong class="link-text">"{{ step.text if step.text else (step.title if step.title else
+            'Link tanpa teks') }}"</strong> <br>
+        Menuju ke: <a href="{{ step.url }}" target="_blank">{{ step.url }}</a>
+        {% if step.title and step.title != 'No Title' and step.title != step.text %}
+        <small>(Judul Halaman: {{step.title}})</small>
+        {% endif %}
+        {% endif %}
+    </li>
+    {% endfor %}
+</ol>
+{% else %}
+<p>Rute tidak tersedia atau ini adalah halaman seed itu sendiri.</p>
+{% endif %}
