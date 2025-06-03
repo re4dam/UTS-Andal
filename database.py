@@ -57,9 +57,38 @@ def init_db():
         status TEXT DEFAULT 'pending' -- pending, processing, done, error
     )""")
 
+    # --- NEW TABLE FOR CONFIG SETTINGS ---
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS config_settings (
+        setting_name TEXT PRIMARY KEY NOT NULL,
+        setting_value TEXT
+    )""")
+
+    # Inisialisasi SEED_URL jika belum ada di config_settings
+    # Ambil nilai default dari config.py saat pertama kali diinisialisasi
+    from config import SEED_URL as DEFAULT_SEED_URL_FROM_CONFIG
+    cursor.execute("INSERT OR IGNORE INTO config_settings (setting_name, setting_value) VALUES (?, ?)",
+                   ("SEED_URL", DEFAULT_SEED_URL_FROM_CONFIG))
+
     conn.commit()
     conn.close()
 
+
+def get_setting(setting_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT setting_value FROM config_settings WHERE setting_name = ?", (setting_name,))
+    result = cursor.fetchone()
+    conn.close()
+    return result["setting_value"] if result else None
+
+def set_setting(setting_name, setting_value):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO config_settings (setting_name, setting_value) VALUES (?, ?)",
+                   (setting_name, setting_value))
+    conn.commit()
+    conn.close()
 
 # Panggil init_db() sekali saat aplikasi pertama kali dijalankan atau saat setup
 if __name__ == "__main__":
