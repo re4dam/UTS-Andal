@@ -15,7 +15,7 @@ MAX_CRAWL_PAGES = int(
 MAX_CRAWL_DEPTH = int(os.environ.get("MAX_CRAWL_DEPTH", 5))  # Batasi kedalaman crawl
 
 # Batasan untuk hasil pencarian
-MAX_SEARCH_RESULTS = int(os.environ.get("MAX_SEARCH_RESULTS", 50))
+MAX_SEARCH_RESULTS = int(os.environ.get("MAX_SEARCH_RESULTS", 25))
 
 # Database
 DATABASE_NAME = "search_engine.db"
