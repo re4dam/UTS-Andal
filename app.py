@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup, Comment
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
 from collections import deque
 import urllib.parse
 import re
@@ -11,18 +11,17 @@ from datetime import datetime
 
 # Impor konfigurasi dan fungsi database
 from config import (
-    SEED_URL,
-    MAIN_DOMAIN,
     MAX_CRAWL_PAGES,
     MAX_CRAWL_DEPTH,
     MAX_SEARCH_RESULTS,
     CRAWLER_USER_AGENT,
 )
 import database  # Menggunakan file database.py yang sudah dibuat
+from urllib.parse import urlparse
 
 app = Flask(__name__)
-app.config.from_object("config")  # Memuat konfigurasi dari config.py
-
+#app.config.from_object("config")  # Memuat konfigurasi dari config.py
+app.secret_key = 'supersecretkey'
 
 # --- Helper Functions ---
 def get_domain(url):
@@ -31,6 +30,33 @@ def get_domain(url):
     except Exception:
         return None
 
+# Dapatkan SEED_URL dari database atau gunakan default dari config jika belum ada
+# Fungsi ini akan dipanggil saat aplikasi dimulai dan kapanpun SEED_URL dibutuhkan
+def load_seed_url_from_db():
+    seed_url_from_db = database.get_setting("SEED_URL")
+    if not seed_url_from_db:
+        # Jika belum ada di DB, gunakan nilai default dari config.py dan simpan ke DB
+        from config import SEED_URL as DEFAULT_SEED_URL_FROM_CONFIG
+        database.set_setting("SEED_URL", DEFAULT_SEED_URL_FROM_CONFIG)
+        return DEFAULT_SEED_URL_FROM_CONFIG
+    return seed_url_from_db
+
+# Definisikan variabel global di level modul
+CURRENT_SEED_URL = None
+CURRENT_MAIN_DOMAIN = None
+
+# Fungsi untuk memperbarui variabel global (dipanggil saat startup dan setelah set_seed_url)
+def update_global_seed_vars():
+    global CURRENT_SEED_URL, CURRENT_MAIN_DOMAIN
+    CURRENT_SEED_URL = load_seed_url_from_db()
+    CURRENT_MAIN_DOMAIN = get_domain(CURRENT_SEED_URL)
+    app.config["SEED_URL"] = CURRENT_SEED_URL # Perbarui Flask config juga
+    app.config["MAIN_DOMAIN"] = CURRENT_MAIN_DOMAIN
+    print(f"Global SEED_URL updated to: {CURRENT_SEED_URL}")
+
+
+# Panggil sekali saat aplikasi pertama kali dimuat
+update_global_seed_vars()
 
 def is_allowed_domain(url, base_domain_to_check_against):
     # base_domain_to_check_against adalah domain utama dari SEED_URL
@@ -65,9 +91,10 @@ def normalize_url(url, base_url_for_relative):
     if not urllib.parse.urlparse(url).scheme and (
         url.startswith("/") or not url.startswith("http")
     ):
-        # Coba tambahkan skema dari SEED_URL
-        seed_scheme = urllib.parse.urlparse(SEED_URL).scheme
-        url = urllib.parse.urljoin(SEED_URL, url)
+        ## MODIFIKASI: Gunakan CURRENT_SEED_URL di sini
+        seed_scheme = urllib.parse.urlparse(CURRENT_SEED_URL).scheme
+        url = urllib.parse.urljoin(CURRENT_SEED_URL, url)
+        ## MODIFIKASI SELESAI
 
     return url
 
@@ -416,9 +443,12 @@ def bfs_crawler(start_url, max_pages=MAX_CRAWL_PAGES, max_depth=MAX_CRAWL_DEPTH)
             time.sleep(0.6)  # Sedikit tingkatkan jeda
 
     conn.close()
-    CRAWLER_STATUS.update({"running": False, "current_url": "Crawl Finished"})
-    print(
-        f"Crawl finished. Pages crawled: {CRAWLER_STATUS['pages_crawled']}. Last error: {CRAWLER_STATUS['last_error']}"
+    if CRAWLER_STATUS["running"]: # Jika masih running, berarti selesai secara alami (pages_crawled >= max_pages)
+        CRAWLER_STATUS.update({"running": False, "current_url": "Crawl Selesai"})
+        print(f"Crawl selesai. Halaman di-crawl: {CRAWLER_STATUS['pages_crawled']}. Error terakhir: {CRAWLER_STATUS['last_error']}")
+    else: # Jika tidak running, berarti dihentikan oleh user
+        CRAWLER_STATUS.update({"current_url": "Crawl Dihentikan"})
+        print(f"Crawl dihentikan oleh pengguna. Halaman di-crawl: {CRAWLER_STATUS['pages_crawled']}. Error terakhir: {CRAWLER_STATUS['last_error']}"
     )
 
 
@@ -618,9 +648,9 @@ def get_path_route(page_id):
             return jsonify({"error": f"Invalid path data in database: {e}"}), 500
 
     # Bangun path yang akan ditampilkan
-    # Path dimulai dari SEED_URL
+    # Path dimulai dari CURRENT_SEED_URL
     display_path = [
-        {"url": SEED_URL, "text": "Halaman Awal (Seed)", "title": "Seed URL"}
+        {"url": CURRENT_SEED_URL, "text": "Halaman Awal (Seed)", "title": "Seed URL"}
     ]
 
     # Tambahkan langkah-langkah dari path_list_from_db
@@ -645,7 +675,7 @@ def get_path_route(page_id):
     # display_path seharusnya sudah mencakup langkah terakhir yang mengarah ke target_url,
     # namun target_url itu sendiri sebagai "node tujuan" perlu ditampilkan.
     # Jika display_path masih kosong setelah SEED_URL (artinya target_url adalah SEED_URL itu sendiri)
-    if target_url == SEED_URL and len(display_path) == 1:
+    if target_url == CURRENT_SEED_URL and len(display_path) == 1:
         pass  # Sudah benar, display_path hanya berisi Seed URL
     elif not display_path or (
         display_path[-1]["url"] != target_url
@@ -677,7 +707,7 @@ def get_path_route(page_id):
     return render_template(
         "path_display_modal_content.html",
         path=display_path,
-        seed_url=SEED_URL,
+        seed_url=CURRENT_SEED_URL,
         target_url=target_url,
         target_title=target_title,
     )
@@ -685,40 +715,60 @@ def get_path_route(page_id):
 
 @app.route("/admin/crawl", methods=["GET", "POST"])
 def admin_crawl_page():
-    global CRAWLER_STATUS
-    message = None
+    global CRAWLER_STATUS, CURRENT_SEED_URL, CURRENT_MAIN_DOMAIN
+    message = None # Diganti oleh flash messages
+    seed_url_display = CURRENT_SEED_URL # Tampilkan SEED_URL saat ini di template
+
     if request.method == "POST":
         action = request.form.get("action")
-        if action == "start_crawl" and not CRAWLER_STATUS["running"]:
-            try:
-                # Untuk produksi, jalankan di background thread:
-                # import threading
-                # thread = threading.Thread(target=bfs_crawler, args=(SEED_URL, MAX_CRAWL_PAGES, MAX_CRAWL_DEPTH))
-                # thread.daemon = True # Agar thread berhenti jika main app berhenti
-                # thread.start()
-                # message = "Crawler started in background. Check server logs for progress."
-                # Untuk sekarang, jalankan sinkron untuk debugging lebih mudah:
-                bfs_crawler(SEED_URL, MAX_CRAWL_PAGES, MAX_CRAWL_DEPTH)
-                message = f"Crawling process completed. Pages crawled: {CRAWLER_STATUS['pages_crawled']}."
-                if CRAWLER_STATUS["last_error"]:
-                    message += f" Last error: {CRAWLER_STATUS['last_error']}"
 
-            except Exception as e:
-                message = f"Error starting crawl: {e}"
-                CRAWLER_STATUS["running"] = False
-        elif action == "start_crawl" and CRAWLER_STATUS["running"]:
-            message = "Crawler is already running."
+        if action == "start_crawl":
+            if CRAWLER_STATUS["running"]:
+                flash("Crawler sedang berjalan.", "warning")
+            else:
+                try:
+                    # Pastikan menggunakan SEED_URL yang paling baru dari database
+                    update_global_seed_vars() # Memuat CURRENT_SEED_URL terbaru dari DB
+                    # Untuk produksi, jalankan di background thread:
+                    # import threading
+                    # thread = threading.Thread(target=bfs_crawler, args=(CURRENT_SEED_URL, MAX_CRAWL_PAGES, MAX_CRAWL_DEPTH))
+                    # thread.daemon = True # Agar thread berhenti jika main app berhenti
+                    # thread.start()
+                    # flash("Crawler dimulai di background. Periksa log server untuk progres.", "info")
+                    # Untuk sekarang, jalankan sinkron untuk debugging lebih mudah:
+                    bfs_crawler(CURRENT_SEED_URL, MAX_CRAWL_PAGES, MAX_CRAWL_DEPTH)
+                    msg = f"Proses crawling selesai. Halaman di-crawl: {CRAWLER_STATUS['pages_crawled']}."
+                    if CRAWLER_STATUS["last_error"]:
+                        msg += f" Error terakhir: {CRAWLER_STATUS['last_error']}"
+                        flash(msg, "danger") # Jika ada error, tampilkan sebagai danger
+                    else:
+                        flash(msg, "success")
+
+                except Exception as e:
+                    flash(f"Error saat memulai crawl: {e}", "danger")
+                    CRAWLER_STATUS["running"] = False # Pastikan status di-reset jika ada error tak terduga
+        elif action == "stop_crawl":
+            if CRAWLER_STATUS["running"]:
+                CRAWLER_STATUS["running"] = False # Set status ke False untuk menghentikan loop di bfs_crawler
+                flash("Permintaan penghentian crawler diterima. Crawler akan berhenti setelah menyelesaikan proses halaman saat ini.", "info")
+            else:
+                flash("Crawler tidak sedang berjalan.", "warning")
+
         elif action == "reindex":
-            try:
-                reindex_all_data()
-                message = "Re-indexing process completed."
-            except Exception as e:
-                message = f"Error starting re-indexing: {e}"
+            if CRAWLER_STATUS["running"]:
+                flash("Tidak bisa re-index saat crawler berjalan.", "warning")
+            else:
+                try:
+                    reindex_all_data()
+                    flash("Proses re-indexing selesai.", "success")
+                except Exception as e:
+                    flash(f"Error saat memulai re-indexing: {e}", "danger")
+
         elif action == "reset_db":
-            try:
-                if CRAWLER_STATUS["running"]:
-                    message = "Cannot reset database while crawler is running."
-                else:
+            if CRAWLER_STATUS["running"]:
+                flash("Tidak bisa mereset database saat crawler berjalan.", "warning")
+            else:
+                try:
                     conn_reset = database.get_db_connection()
                     cursor_reset = conn_reset.cursor()
                     tables_to_clear = [
@@ -735,9 +785,16 @@ def admin_crawl_page():
                                 f"DELETE FROM sqlite_sequence WHERE name='{table}'"
                             )
                         except sqlite3.OperationalError:
-                            pass  # Abaikan jika tabel sequence tidak ada
+                            pass
                     conn_reset.commit()
-                    database.init_db()  # Buat ulang tabel jika terhapus (init_db harus CREATE IF NOT EXISTS)
+
+                    # Reset SEED_URL di DB ke nilai default dari config.py
+                    from config import SEED_URL as DEFAULT_SEED_URL_FROM_CONFIG
+                    database.set_setting("SEED_URL", DEFAULT_SEED_URL_FROM_CONFIG)
+                    # Perbarui variabel global setelah reset
+                    update_global_seed_vars()
+                    seed_url_display = CURRENT_SEED_URL # Untuk ditampilkan di template
+
                     conn_reset.close()
                     CRAWLER_STATUS.update(
                         {
@@ -747,17 +804,41 @@ def admin_crawl_page():
                             "last_error": None,
                         }
                     )
-                    message = "Database has been reset."
-            except Exception as e:
-                message = f"Error resetting database: {e}"
+                    flash("Database berhasil direset. Seed URL dikembalikan ke default.", "success")
+                except Exception as e:
+                    flash(f"Error saat mereset database: {e}", "danger")
+
+        ## MODIFIKASI DIMULAI: Rute untuk mengubah Seed URL
+        elif action == "set_seed_url":
+            if CRAWLER_STATUS["running"]:
+                flash("Tidak bisa mengubah Seed URL saat crawler berjalan.", "warning")
+            else:
+                new_seed_url = request.form.get("new_seed_url_input")
+                if new_seed_url:
+                    # Validasi URL sederhana
+                    if not (new_seed_url.startswith("http://") or new_seed_url.startswith("https://")):
+                        new_seed_url = "https://" + new_seed_url # Coba tambahkan https secara otomatis
+                    parsed_new_url = urlparse(new_seed_url)
+                    if not parsed_new_url.netloc:
+                        flash("URL tidak valid. Mohon masukkan domain yang lengkap.", "danger")
+                    else:
+                        database.set_setting("SEED_URL", new_seed_url)
+                        update_global_seed_vars() # Perbarui variabel global
+                        seed_url_display = CURRENT_SEED_URL # Untuk ditampilkan di template
+                        flash(f"Seed URL berhasil diperbarui ke: {CURRENT_SEED_URL}. Untuk menerapkan perubahan, mohon reset database dan mulai crawl ulang.", "success")
+                else:
+                    flash("Seed URL baru tidak boleh kosong.", "warning")
+        ## MODIFIKASI SELESAI: Rute untuk mengubah Seed URL
+
+    # Saat GET request atau setelah POST, pastikan seed_url_display selalu yang terbaru
+    seed_url_display = CURRENT_SEED_URL
 
     return render_template(
         "crawl_admin.html",
         crawler_status=CRAWLER_STATUS,
-        message=message,
-        seed_url=SEED_URL,
+        seed_url=seed_url_display,
+        # message tidak lagi diperlukan karena menggunakan flash
     )
-
 
 @app.route("/admin/crawl_status")
 def get_crawl_status_route():  # Ubah nama fungsi agar tidak konflik
@@ -767,4 +848,5 @@ def get_crawl_status_route():  # Ubah nama fungsi agar tidak konflik
 
 if __name__ == "__main__":
     database.init_db()
+    update_global_seed_vars()
     app.run(debug=True, host="0.0.0.0", port=5000)  # Port bisa disesuaikan
