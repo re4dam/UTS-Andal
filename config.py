@@ -10,7 +10,7 @@ ALLOWED_DOMAINS = []
 
 # Batasan untuk crawler
 MAX_CRAWL_PAGES = int(
-    os.environ.get("MAX_CRAWL_PAGES", 500)
+    os.environ.get("MAX_CRAWL_PAGES", 100)
 )  # Batasi jumlah halaman yang di-crawl
 MAX_CRAWL_DEPTH = int(os.environ.get("MAX_CRAWL_DEPTH", 5))  # Batasi kedalaman crawl
 
