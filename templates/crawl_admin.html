@@ -6,10 +6,12 @@
     <title>Admin Crawler</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
+        /* Gaya dasar */
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
             background-color: #f4f7f6;
+            color: #333;
         }
 
         .container {
@@ -21,55 +23,24 @@
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
 
-        h1 {
+        h1, h2 {
             color: #333;
             text-align: center;
             margin-bottom: 20px;
         }
 
-        .admin-actions form {
-            margin-bottom: 15px;
-        }
-
-        .admin-actions button {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 15px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1em;
-            margin-right: 10px;
-        }
-
-        .admin-actions button:hover {
-            background-color: #0056b3;
-        }
-
-        .admin-actions button.danger {
-            background-color: #dc3545;
-        }
-
-        .admin-actions button.danger:hover {
-            background-color: #c82333;
-        }
-
-        .status-section {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #e9ecef;
-            border-radius: 4px;
-        }
-
-        .status-section h3 {
-            margin-top: 0;
-            color: #495057;
+        /* Flash Messages */
+        .flashes {
+            list-style: none;
+            padding: 0;
+            margin-bottom: 20px;
         }
 
         .message {
-            padding: 10px;
-            margin-bottom: 15px;
+            padding: 10px 15px;
+            margin-bottom: 10px;
             border-radius: 4px;
+            font-weight: bold;
         }
 
         .message.success {
@@ -78,16 +49,108 @@
             border: 1px solid #c3e6cb;
         }
 
-        .message.error {
+        .message.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .message.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+
+        .message.danger {
             background-color: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
+        }
+
+        /* Form Styling */
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input[type="text"], input[type="number"] {
+            width: calc(100% - 22px); /* Mengkompensasi padding dan border */
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box; /* Pastikan padding tidak menambah lebar total */
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-right: 10px;
+            transition: background-color 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        button.danger {
+            background-color: #dc3545;
+        }
+
+        button.danger:hover {
+            background-color: #c82333;
+        }
+
+        /* Status Section */
+        .status-section {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            border: 1px solid #ced4da;
+        }
+
+        .status-section h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+
+        .status-section p {
+            margin: 5px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #eee;
+            margin: 25px 0;
         }
 
         .home-link {
             display: block;
             text-align: center;
             margin-top: 20px;
+            font-size: 1.1em;
+        }
+        .home-link a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .home-link a:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -95,37 +158,60 @@
 <body>
     <div class="container">
         <h1>Administrasi Crawler & Indeks</h1>
+        <!-- <p><a href="{{ url_for('index_page') }}">Kembali ke Halaman Pencarian</a></p> -->
 
-        {% if message %}
-        <div
-            class="message {{ 'success' if 'berhasil' in message.lower() or 'completed' in message.lower() or 'initiated' in message.lower() or 'reset' in message.lower() else 'error' }}">
-            {{ message }}</div>
-        {% endif %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flashes">
+                    {% for category, message in messages %}
+                        <li class="message {{ category }}">{{ message }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
 
-        <div class="admin-actions">
-            <p><strong>Seed URL Saat Ini:</strong> {{ seed_url }}</p>
-            <form method="POST" style="display: inline-block;">
-                <input type="hidden" name="action" value="start_crawl">
-                <button type="submit" {% if crawler_status.running %}disabled{% endif %}>Mulai/Lanjutkan Crawl</button>
-            </form>
-            <form method="POST" style="display: inline-block;">
-                <input type="hidden" name="action" value="reindex">
-                <button type="submit" {% if crawler_status.running %}disabled{% endif %}>Re-Index Semua Data</button>
-            </form>
-            <form method="POST" style="display: inline-block;"
-                onsubmit="return confirm('Anda yakin ingin mereset seluruh database? Data crawling dan indeks akan hilang permanen!');">
-                <input type="hidden" name="action" value="reset_db">
-                <button type="submit" class="danger" {% if crawler_status.running %}disabled{% endif %}>Reset
-                    Database</button>
-            </form>
-        </div>
+        <hr>
+
+        <h2>Pengaturan Seed URL</h2>
+        <p><strong>Seed URL Saat Ini:</strong> <span id="currentSeedUrlDisplay">{{ seed_url }}</span></p>
+        <form method="POST">
+            <div class="form-group">
+                <label for="new_seed_url_input">Ganti Seed URL:</label>
+                <input type="text" id="new_seed_url_input" name="new_seed_url_input" value="{{ seed_url }}" placeholder="Contoh: https://new-website.com" required>
+            </div>
+            <button type="submit" name="action" value="set_seed_url" id="setSeedUrlButton">Update Seed URL</button>
+            <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
+                Setelah mengubah Seed URL, disarankan untuk mereset database dan memulai crawl baru.
+            </p>
+        </form>
+
+        <hr>
+
+        <h2>Aksi Crawler</h2>
+        <form method="POST">
+            <div class="admin-actions">
+                <button type="submit" name="action" value="start_crawl" id="startCrawlButton">
+                    Mulai Crawl
+                </button>
+                <button type="submit" name="action" value="stop_crawl" class="danger" id="stopCrawlButton">
+                    Berhenti Crawl
+                </button>
+                <button type="submit" name="action" value="reindex" id="reindexButton">Re-Index Semua Data</button>
+                <button type="submit" name="action" value="reset_db" class="danger" id="resetDbButton"
+                    onclick="return confirm('Anda yakin ingin mereset seluruh database? Ini akan menghapus semua data crawling dan indeks secara permanen, serta mengembalikan Seed URL ke nilai default.');">
+                    Reset Database
+                </button>
+            </div>
+        </form>
 
         <div class="status-section">
             <h3>Status Crawler Saat Ini</h3>
-            <p><strong>Sedang Berjalan:</strong> <span id="statusRunning">{{ crawler_status.running }}</span></p>
+            <p><strong>Sedang Berjalan:</strong> <span id="statusRunning">{{ 'Ya' if crawler_status.running else 'Tidak' }}</span></p>
             <p><strong>Halaman Di-crawl:</strong> <span id="statusPages">{{ crawler_status.pages_crawled }}</span></p>
             <p><strong>URL Saat Ini:</strong> <span id="statusCurrentUrl">{{ crawler_status.current_url }}</span></p>
+            <p><strong>Error Terakhir:</strong> <span id="statusLastError" style="color: red;">{{ crawler_status.last_error if crawler_status.last_error else 'Tidak ada' }}</span></p>
         </div>
+
         <div class="home-link">
             <a href="{{ url_for('index_page') }}">Kembali ke Halaman Pencarian</a>
         </div>
@@ -136,29 +222,29 @@
             fetch("{{ url_for('get_crawl_status_route') }}")
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById('statusRunning').textContent = data.running;
+                    document.getElementById('statusRunning').textContent = data.running ? 'Ya' : 'Tidak';
                     document.getElementById('statusPages').textContent = data.pages_crawled;
                     document.getElementById('statusCurrentUrl').textContent = data.current_url;
-                    // Disable/enable buttons based on running status
-                    const buttons = document.querySelectorAll('.admin-actions button');
-                    buttons.forEach(button => {
-                        // Keep reset button always enabled if not running, or if it's the reset button itself
-                        if (button.name === 'action' && button.value === 'reset_db') {
-                            button.disabled = data.running; // Hanya disable jika crawler berjalan
-                        } else {
-                            button.disabled = data.running;
-                        }
-                    });
+                    document.getElementById('statusLastError').textContent = data.last_error ? data.last_error : 'Tidak ada';
+
+                    // Update button states
+                    const isRunning = data.running;
+                    document.getElementById('startCrawlButton').disabled = isRunning;
+                    document.getElementById('stopCrawlButton').disabled = !isRunning; // Stop button aktif hanya jika running
+                    document.getElementById('reindexButton').disabled = isRunning;
+                    document.getElementById('resetDbButton').disabled = isRunning;
+                    document.getElementById('setSeedUrlButton').disabled = isRunning;
+
+                    // Update button text for start crawl
+                    document.getElementById('startCrawlButton').textContent = isRunning ? 'Crawling...' : 'Mulai Crawl';
                 })
                 .catch(error => console.error('Error fetching crawl status:', error));
         }
 
-        // Update status setiap 3 detik jika halaman admin terbuka
-        if (window.location.pathname.includes('/admin/crawl')) {
-            setInterval(updateStatus, 3000);
-            // Panggil sekali di awal juga
-            updateStatus();
-        }
+        // Update status setiap 3 detik
+        setInterval(updateStatus, 3000);
+        // Panggil sekali di awal saat halaman dimuat
+        document.addEventListener('DOMContentLoaded', updateStatus);
     </script>
 </body>
 
